@@ -1,113 +1,147 @@
-# ESP32-S3 WROOM CAM (N16R8) - Stalkbot IoT Firmware
+# ESP32-S3 CAM IoT Firmware (`stalkbot-iot`)
 
-Kho mã nguồn firmware Camera Web Server cho vi điều khiển **ESP32-S3 WROOM CAM (16MB Flash, 8MB PSRAM, Dual Type-C)** thuộc dự án **Stalkbot**.
+[![Platform: ESP32-S3](https://img.shields.io/badge/Platform-ESP32--S3-orange.svg)](https://www.espressif.com/en/products/socs/esp32-s3)
+[![Framework: Arduino](https://img.shields.io/badge/Framework-Arduino-00979D.svg)](https://github.com/espressif/arduino-esp32)
+[![Hardware: N16R8](https://img.shields.io/badge/Hardware-N16R8%20Dual%20Type--C-blue.svg)](#hardware-specifications)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-green.svg)](LICENSE)
 
-Tài liệu này đúc kết toàn bộ quy trình cấu hình, nạp code, tối ưu hóa bộ nhớ và các kinh nghiệm thực chiến xử lý sự cố (troubleshooting) đã được kiểm chứng thành công 100%.
+Production-ready Camera Web Server firmware for the **ESP32-S3-WROOM-1 CAM (N16R8, Dual Type-C)** development board, serving as the vision acquisition node for the **Stalkbot** robotics and computer vision ecosystem.
 
 ---
 
-## 1. Thông số phần cứng bo mạch
+## 1. Hardware Specifications
 
-| Thành phần | Cấu hình chi tiết |
+| Component | Specification |
 | :--- | :--- |
-| **Vi điều khiển (MCU)** | ESP32-S3 Dual-Core Xtensa® 32-bit LX7 @ **240 MHz** (Tích hợp Vector AI) |
-| **Bộ nhớ Flash** | **16 MB** SPI Flash (`N16`) |
-| **Bộ nhớ PSRAM** | **8 MB Octal PSRAM** (`R8` / OPI PSRAM) - Chuyên dụng cho bộ đệm hình ảnh |
-| **Cảm biến Camera** | Socket FPC 24-pin DVP (Hỗ trợ OV2640 / OV3660 / OV5640) |
-| **Sơ đồ chân (Pinout)** | Chuẩn **`CAMERA_MODEL_ESP32S3_EYE`** trong `camera_pins.h` |
-| **Cổng kết nối kép (Dual Type-C)** | • **Cổng COM / UART**: Giao tiếp qua chip nạp WCH CH343/CH340.<br>• **Cổng Native USB / OTG**: Kết nối trực tiếp vào phần cứng USB-Serial/JTAG của ESP32-S3. |
+| **SoC** | ESP32-S3 (Dual-core Xtensa® 32-bit LX7 @ **240 MHz**) with AI Vector Extensions |
+| **Flash Memory** | **16 MB** SPI Flash (`N16`) |
+| **PSRAM** | **8 MB** Octal SPI PSRAM (`R8` / OPI PSRAM) |
+| **Camera Interface** | 24-pin DVP FPC connector (Supports OV2640 / OV3660 / OV5640) |
+| **Default Pin Model** | `CAMERA_MODEL_ESP32S3_EYE` (`camera_pins.h`) |
+| **Wireless** | 2.4 GHz Wi-Fi (802.11 b/g/n) + Bluetooth 5.0 LE & Mesh |
+| **Dual Type-C Interfaces** | • **COM / UART Port:** WCH CH343/CH340 high-speed USB-to-UART bridge.<br>• **Native USB / OTG Port:** Direct hardware USB-Serial/JTAG (GPIO 19/20). |
 
 ---
 
-## 2. Cấu trúc thư mục mã nguồn
-
-Để nạp code bằng **Arduino IDE**, bắt buộc tên thư mục sketch phải trùng với tên file `.ino` chính:
+## 2. Directory Structure
 
 ```text
-iot/
-├── CameraWebServer/             <-- Thư mục sketch chính
-│   ├── CameraWebServer.ino      <-- File chạy chính (setup, loop, Wi-Fi, camera_init)
-│   ├── board_config.h           <-- Chọn model mạch (CAMERA_MODEL_ESP32S3_EYE)
-│   ├── camera_pins.h            <-- Định nghĩa GPIO 24-pin của Camera
-│   ├── app_httpd.cpp            <-- Xử lý Web Server & luồng stream video MJPEG
-│   ├── camera_index.h           <-- Giao diện Web điều khiển (HTML/CSS/JS nén gzip)
-│   ├── wifi_credentials.h       <-- Cấu hình tên & mật khẩu Wi-Fi
-│   └── partitions.csv           <-- Bảng phân vùng bộ nhớ Flash 16MB
-└── README.md                    <-- Tài liệu hướng dẫn
+stalkbot-iot/
+├── CameraWebServer/             # Primary Arduino sketch package
+│   ├── CameraWebServer.ino      # Application entrypoint & initialization
+│   ├── board_config.h           # Camera model selector (CAMERA_MODEL_ESP32S3_EYE)
+│   ├── camera_pins.h            # DVP 24-pin hardware pin definitions
+│   ├── app_httpd.cpp            # HTTP server handler & MJPEG stream generator
+│   ├── camera_index.h           # Gzip-compressed HTML/JS web control client
+│   ├── wifi_credentials.h       # Local Wi-Fi network configuration
+│   └── partitions.csv           # 16MB custom flash partition layout
+├── .gitignore                   # Git artifact exclusion rules
+├── ci.yml                       # Build matrix validation configuration
+└── README.md                    # Technical documentation
 ```
+
+> **Note on Arduino IDE Compatibility:** All companion header files (`.h`), source files (`.cpp`), and configuration tables (`.csv`) reside directly inside `CameraWebServer/` alongside `CameraWebServer.ino` to ensure seamless discovery by the Arduino toolchain.
 
 ---
 
-## 3. Hướng dẫn thiết lập từng bước (Setup Guide)
+## 3. Getting Started
 
-### Bước 1: Cấu hình Wi-Fi
-Mở file `CameraWebServer/wifi_credentials.h`, điền thông tin Wi-Fi nhà bạn (băng tần **2.4 GHz**):
+### Prerequisites
+1. Install **Arduino IDE** (v2.x recommended).
+2. Add ESP32 board package URL in **Preferences -> Additional Boards Manager URLs**:
+   ```text
+   https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json
+   ```
+3. Install **`esp32`** by Espressif Systems (v3.0+ or v2.0.14+) via **Boards Manager**.
 
+### Configuration Steps
+
+#### 1. Wi-Fi Credentials
+Edit `CameraWebServer/wifi_credentials.h`:
 ```cpp
-#define WIFI_SSID     "Ten_Wifi_Cua_Ban"
-#define WIFI_PASSWORD "Mat_Khau_Wifi"
+#define WIFI_SSID     "Your_2.4GHz_WiFi_SSID"
+#define WIFI_PASSWORD "Your_WiFi_Password"
 ```
 
-### Bước 2: Kiểm tra cấu hình Model Camera
-Trong file `CameraWebServer/board_config.h`, đảm bảo dòng sau đã được bật:
+#### 2. Verify Camera Model
+Ensure `CAMERA_MODEL_ESP32S3_EYE` is active in `CameraWebServer/board_config.h`:
 ```cpp
-#define CAMERA_MODEL_ESP32S3_EYE // Khớp 100% chân FPC 24-pin của bo mạch
+#define CAMERA_MODEL_ESP32S3_EYE
 ```
 
-### Bước 3: Cấu hình trên Arduino IDE
-Vào menu **Tools** của Arduino IDE và thiết lập chính xác các thông số:
+---
 
-* **Board:** `ESP32S3 Dev Module`
-* **Flash Size:** `16MB (128Mb)`
-* **Partition Scheme:** `16M Flash (3MB APP/9.9MB FATFS)` hoặc `Huge APP (3MB No OTA)`
-* **PSRAM:** `OPI PSRAM` *(BẮT BUỘC - Để nhận đủ 8MB RAM đệm ảnh độ nét cao)*
-* **Upload Speed:** `921600` (hoặc `460800` / `115200`)
-* **Port:** Chọn đúng cổng COM của thiết bị.
+## 4. Compiler & Upload Settings (Arduino IDE)
+
+Configure the **Tools** menu strictly as follows:
+
+| Menu Item | Required Value | Rationale |
+| :--- | :--- | :--- |
+| **Board** | `ESP32S3 Dev Module` | Standard core definition for ESP32-S3 |
+| **Flash Size** | `16MB (128Mb)` | Matches on-board N16 Flash capacity |
+| **Partition Scheme** | `16M Flash (3MB APP/9.9MB FATFS)` | Allocates sufficient flash for app binaries |
+| **PSRAM** | `OPI PSRAM` | **Mandatory** for 8MB Octal PSRAM buffer allocation |
+| **Upload Speed** | `921600` (or `460800`) | High-speed flashing throughput |
+
+### Dual Type-C Port Flashing Matrix
+
+| Connection Port | Recognized Device | `USB CDC On Boot` Setting | Post-Upload Requirement |
+| :--- | :--- | :--- | :--- |
+| **Native USB / OTG** *(Recommended)* | `USB-Serial/JTAG` (e.g. COM4) | **`Enabled`** | Press hardware **`RST`** button once to boot application. |
+| **COM / UART (CH343)** | `USB-Enhanced-SERIAL CH343` (e.g. COM3) | **`Disabled`** | If bootloader hangs on `0x8`, hold **`BOOT`** button while `Connecting...` appears. |
 
 ---
 
-## 4. Kinh nghiệm thực chiến: Cổng Type-C & `USB CDC On Boot`
+## 5. Streaming & Web Interface
 
-Mạch sở hữu 2 cổng Type-C với cơ chế hoạt động khác nhau:
-
-### Trường hợp A: Cắm cổng Native USB / OTG (Khuyên dùng - Nạp cực mượt)
-* Máy tính nhận dạng cổng: **`USB-Serial/JTAG`** (ví dụ `COM4`).
-* Cài đặt trong menu Tools: **`USB CDC On Boot: Enabled`**.
-* **Đặc điểm:** Nạp cực nhanh, không bao giờ bị kẹt lỗi bootloader.
-* ⚠️ **Lưu ý sau khi nạp:** Mạch sẽ báo `Hard resetting via RTS pin...` nhưng không tự khởi động lại. Bạn **phải bấm nút `RST` (hoặc `EN`) trên thân mạch 1 lần**, sau đó mở Serial Monitor (115200 baud) để xem IP.
-
-### Trường hợp B: Cắm cổng UART / COM (Qua chip CH343)
-* Máy tính nhận dạng cổng: **`USB-Enhanced-SERIAL CH343`** (ví dụ `COM3`).
-* Cài đặt trong menu Tools: **`USB CDC On Boot: Disabled`**.
-* ⚠️ **Xử lý lỗi `Wrong boot mode detected (0x8)`:** Mạch nạp tự động của CH343 có thể chưa kịp kéo chân GPIO 0 xuống đất.
-  * **Cách xử lý:** Bấm nút **Upload** trên IDE, ngay khi thấy xuất hiện dòng `Connecting................`, lấy ngón tay **bấm và giữ nút `BOOT`** trên mạch cho đến khi thấy chữ `Writing...` mới thả tay ra.
-
----
-
-## 5. Khởi chạy & Xem Video Stream
-
-1. Mở **Serial Monitor** trong Arduino IDE (chọn tốc độ **`115200 baud`**).
-2. Khi khởi động thành công, màn hình sẽ in ra thông báo:
+1. Launch **Serial Monitor** at **`115200 baud`**.
+2. Press hardware **`RST` / `EN`** button. The device boots and acquires an IP address:
    ```text
    --- ESP32-S3 Camera Booting ---
-   Connecting to Wi-Fi SSID: Khanh Hoa ...
+   Connecting to Wi-Fi SSID: MyNetwork ...
    Wi-Fi connected successfully!
    ESP32-S3 IP Address: 192.168.100.104
    Camera Web Server Ready! Use 'http://192.168.100.104' to connect
    ```
-3. Mở trình duyệt web (Chrome / Edge / Safari...), truy cập địa chỉ IP nhận được:
-   ```text
-   http://192.168.100.104
-   ```
-4. 💡 **LƯU Ý QUAN TRỌNG:** Khi giao diện web hiện lên, màn hình camera ban đầu sẽ màu đen vì chế độ stream chưa bật. Bạn hãy **cuộn chuột xuống dưới cùng của menu điều khiển bên trái**, bấm vào nút **`Start Stream`** để video bắt đầu phát.
+3. Open a browser and navigate to `http://<ESP32_IP>` (e.g. `http://192.168.100.104`).
+4. In the left navigation panel, scroll down to the bottom and click **`Start Stream`** to begin video feed acquisition.
 
 ---
 
-## 6. Các đường dẫn API tích hợp
+## 6. HTTP API Endpoints
 
-* **Luồng video trực tiếp (MJPEG Stream):**
-  `http://<ESP32_IP>:81/stream` (Dùng để nhúng trực tiếp vào thẻ `<img src="...">` của Web hoặc đọc qua OpenCV Python).
-* **Chụp 1 tấm ảnh tĩnh (Snapshot):**
-  `http://<ESP32_IP>/capture`
-* **Điều chỉnh thông số Camera từ xa:**
-  `http://<ESP32_IP>/control?var=framesize&val=7` (SVGA)
+The onboard HTTP daemon exposes the following endpoints:
+
+| Endpoint | Protocol | Description |
+| :--- | :--- | :--- |
+| `GET http://<ESP32_IP>/` | HTTP | Full camera diagnostic and configuration UI |
+| `GET http://<ESP32_IP>:81/stream` | HTTP MJPEG | Raw multipart stream (`multipart/x-mixed-replace`) for web/OpenCV ingestion |
+| `GET http://<ESP32_IP>/capture` | HTTP JPEG | Single frame snapshot capture |
+| `GET http://<ESP32_IP>/status` | JSON | Sensor telemetry and active camera settings |
+| `GET http://<ESP32_IP>/control?var={k}&val={v}` | HTTP | Runtime parameter modification (`framesize`, `quality`, `vflip`, `hmirror`) |
+
+### Example Frame Size Control Values
+* `framesize=10`: UXGA (1600x1200)
+* `framesize=7`: SVGA (800x600 - Optimal for streaming)
+* `framesize=6`: VGA (640x480)
+* `framesize=4`: QVGA (320x240 - High FPS)
+
+---
+
+## 7. Troubleshooting Runbook
+
+### Error `0x20003` (`ESP_ERR_NOT_FOUND` / Camera probe failed)
+* **Cause:** Ribbon cable connection issue or incorrect pin mapping.
+* **Resolution:** Reseat the 24-pin FPC ribbon cable with gold contacts facing downwards into the socket latch. Verify `board_config.h` selects `CAMERA_MODEL_ESP32S3_EYE`.
+
+### Error `0x105` (`ESP_ERR_NO_MEM` / Out of Memory)
+* **Cause:** External PSRAM unallocated or disabled.
+* **Resolution:** Ensure **`PSRAM: "OPI PSRAM"`** is selected in compiler flags. Confirm `psramFound()` evaluates to `true` at runtime.
+
+### Stalled Serial Log at `ESP-ROM:esp32s3-20210327`
+* **Cause:** Output redirected to alternate port or chip left in ROM bootloader.
+* **Resolution:** When using Native USB (COM4), set **`USB CDC On Boot: Enabled`** and press the **`RST`** button after flashing completes.
+
+### `Wrong boot mode detected (0x8)`
+* **Cause:** CH343 DTR/RTS timing failed to assert GPIO 0 during bootloader handshake.
+* **Resolution:** Hold the physical **`BOOT`** button during upload until the write progress percentage displays.
